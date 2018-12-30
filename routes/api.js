@@ -10,34 +10,81 @@
 
 var expect = require('chai').expect;
 
+const MongoClient = require('mongodb').MongoClient;
+const ObjectID    = require('mongodb').ObjectID;
+
+const CONNECTION_STRING = process.env.MONGOLAB_URI;
+
 module.exports = function (app) {
   
   app.route('/api/threads/:board')
 
     .get((req, res) => {
-      // TODO: I can GET an array of the most recent 10 bumped threads on the board
-      // with only the most recent 3 replies from /api/threads/{board}.
-      // The reported and delete_passwords fields will not be sent.
+      const board = req.params.board
+      MongoClient.connect(CONNECTION_STRING)
+      .then(db => {
+        db.collection(board)
+        .find({}, { delete_password: 0, reported: 0 }, 
+          {replies: { $size: 3, $sort: { created_on: -1 } }})
+        .sort({ bumped_on: -1 }).limit(10)
+        .toArray()
+        .then(docs => res.json(docs))
+        .catch(err => res.json(err))
+      })
+      .catch(err => res.json(err))
     })
 
     .post((req, res) => {
-      // TODO: I can POST a thread to a specific message board
-      // by passing form data text and delete_password to /api/threads/{board}.
-      // (Recomend res.redirect to board page /b/{board})
-      // Saved will be _id, text, created_on(date&time), bumped_on(date&time, starts same as created_on), reported(boolean), delete_password, & replies(array).
+      const board = req.params.board
+      const thread = Object.assign(req.body, {
+        created_on: new Date(),
+        bumped_on: new Date(),
+        reported: false,
+        replies: []
+      });
+      MongoClient.connect(CONNECTION_STRING)
+      .then(db => {
+        db.collection(board)
+        .insertOne(thread)
+        .then(doc => {
+          thread._id = doc.insertedId
+          res.json(thread)
+          // res.redirect('/b/'+board)
+        })
+      })
+      .catch(err => res.json(err))
     })
 
     .put((req, res) => {
-      // TODO: I can report a thread and change it's reported value to true
-      // by sending a PUT request to /api/threads/{board}
-      // and pass along the thread_id.
-      // (Text response will be 'success')
+      const board = req.params.board;
+      const _id = req.body.thread_id;
+      const reported = req.body.reported;
+      MongoClient.connect(CONNECTION_STRING)
+      .then(db => {
+        db.collection(board)
+        .update({ _id: new ObjectID(_id) }, { $set: { reported } })
+        .then(doc => {
+          res.json({ success: 'successfully updated' })
+        })
+        .catch(err => res.json(err))
+      })
+      .catch(err => res.json(err))
     })
 
     .delete((req, res) => {
-      // TODO: I can delete a thread completely if I send a DELETE request to /api/threads/{board}
-      // and pass along the thread_id & delete_password.
-      // (Text response will be 'incorrect password' or 'success')
+      const board = req.params.board;
+      const _id = req.body.thread_id;
+      const delete_password = req.body.delete_password;
+      MongoClient.connect(CONNECTION_STRING)
+      .then(db => {
+        db.collection(board)
+        .remove({ _id: new ObjectID(_id), delete_password })
+        .then(doc => {
+          res.json({ success: 'successfully deleted' })
+        })
+        .catch(err => res.json({ error: 'incorrect password' }))
+      })
+      .catch(err => res.json(err))
     })
 
     
@@ -48,7 +95,7 @@ module.exports = function (app) {
       // Also hiding the same fields.
     })
 
-    post((req, res) => {
+    .post((req, res) => {
       // TODO: I can POST a reply to a thead on a specific board
       // by passing form data text, delete_password, & thread_id to /api/replies/{board}
       // and it will also update the bumped_on date to the comments date.
