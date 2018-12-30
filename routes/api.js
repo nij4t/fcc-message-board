@@ -24,7 +24,12 @@ module.exports = function (app) {
       MongoClient.connect(CONNECTION_STRING)
       .then(db => {
         db.collection(board)
-        .find({}, { delete_password: 0, reported: 0 }, 
+        .find({}, { 
+          delete_password: 0, 
+          reported: 0, 
+          'replies.reported': 0,
+          'replies.delete_password': 0 
+        }, 
           {replies: { $size: 3, $sort: { created_on: -1 } }})
         .sort({ bumped_on: -1 }).limit(10)
         .toArray()
@@ -91,28 +96,86 @@ module.exports = function (app) {
   app.route('/api/replies/:board')
 
     .get((req, res) => {
-      // TODO: I can GET an entire thread with all it's replies from /api/replies/{board}?thread_id={thread_id}.
-      // Also hiding the same fields.
+      const board = req.params.board;
+      const thread_id = req.query.thread_id;
+      MongoClient.connect(CONNECTION_STRING)
+      .then(db => {
+        db.collection(board)
+        .findOne({ _id: new ObjectID(thread_id) }, { 
+          delete_password: 0, 
+          reported: 0, 
+          'replies.reported': 0,
+          'replies.delete_password': 0 
+        }, 
+        { replies: { $sort: { created_on: -1 } }})
+        .then(docs => res.json(docs))
+        .catch(err => res.json(err))
+      })
+      .catch(err => res.json(err))
     })
 
     .post((req, res) => {
-      // TODO: I can POST a reply to a thead on a specific board
-      // by passing form data text, delete_password, & thread_id to /api/replies/{board}
-      // and it will also update the bumped_on date to the comments date.
-      // (Recomend res.redirect to thread page /b/{board}/{thread_id}) 
-      // In the thread's 'replies' array will be saved _id, text, created_on, delete_password, & reported.
+      const board = req.params.board;
+      const { text, thread_id, delete_password } = req.body;
+      const reply = { 
+        text, 
+        created_on: new Date(), 
+        delete_password, 
+        reported: false,
+        _id: new ObjectID()
+      }
+      MongoClient.connect(CONNECTION_STRING)
+      .then(db => {
+        db.collection(board)
+        .update({ _id: new ObjectID(thread_id) },
+        { $push: { replies: reply }, $set: { bumped_on: reply.created_on } }
+        ).then(doc => {
+          // res.redirect('/b/'+board+'/'+thread_id)
+          res.redirect('/api/replies/'+board+'/?thread_id='+thread_id)
+        }).catch(err => res.json(err))
+      }).catch(err => res.json(err))
     })
 
     .put((req, res) => {
-      // TODO: I can report a reply and change it's reported value to true by sending a PUT request to /api/replies/{board}
-      // and pass along the thread_id & reply_id.
-      // (Text response will be 'success')
+      const board = req.params.board;
+      const _id = req.body.thread_id;
+      const reply_id = req.body.reply_id;
+      MongoClient.connect(CONNECTION_STRING)
+      .then(db => {
+        db.collection(board)
+        .update(
+          { _id: new ObjectID(_id), 'replies._id': new ObjectID(reply_id) }, 
+          { $set: { 'replies.$.reported': true }
+        })
+        .then(doc => {
+          res.json({ success: 'successfully updated' })
+        })
+        .catch(err => res.json(err))
+      })
+      .catch(err => res.json(err))
     })
 
     .delete((req, res) => {
-      // TODO: I can delete a post(just changing the text to '[deleted]') if I send a DELETE request to /api/replies/{board}
-      // and pass along the thread_id, reply_id, & delete_password.
-      // (Text response will be 'incorrect password' or 'success')
+      const board = req.params.board;
+      const _id = req.body.thread_id;
+      const reply_id = req.body.reply_id;
+      const delete_password = req.body.delete_password;
+      MongoClient.connect(CONNECTION_STRING)
+      .then(db => {
+        db.collection(board)
+        .update(
+          { _id: new ObjectID(_id), 
+            'replies._id': new ObjectID(reply_id), 
+            'replies.delete_password': delete_password
+          }, 
+          { $set: { 'replies.$.text': '[deleted]' }
+        })
+        .then(doc => {
+          res.json({ success: 'successfully deleted' })
+        })
+        .catch(err => res.json(err))
+      })
+      .catch(err => res.json(err))
     })
 
 };
