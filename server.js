@@ -11,9 +11,11 @@ var runner            = require('./test-runner');
 
 var app = express();
 
-// TODO: Only allow your site to be loading in an iFrame on your own pages.
-// TODO: Do not allow DNS prefetching.
-// TODO: Only allow your site to send the referrer for your own pages.
+const helmet = require('helmet')
+
+app.use(helmet.frameguard({ domain: 'same-origin' }))
+app.use(helmet.dnsPrefetchControl({ allow: 'false' }))
+app.use(helmet.referrerPolicy({ policy: 'same-origin' }))
 
 app.use('/public', express.static(process.cwd() + '/public'));
 
